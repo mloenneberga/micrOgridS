@@ -4,7 +4,7 @@ import cost_summary as lcoe
 import main
 
 
-def rolling_horizon(PH, CH, SH=8760):
+def rolling_horizon(PV, Storage, SH=8760,PH=120, CH=120,):
     iter = 0
     start = 0
     stop = PH
@@ -28,8 +28,7 @@ def rolling_horizon(PH, CH, SH=8760):
     timeseries[timeseries['PV'] > 1] = 1
 
     itermax = int( (SH / CH) - 1 )
-
-    time_measure = {}
+    objective=0.0
 
     while iter <= itermax:
 
@@ -42,13 +41,10 @@ def rolling_horizon(PH, CH, SH=8760):
 
         print( str( iter + 1 ) + '/' + str( itermax + 1 ) )
 
-        m = main.diesel_only( mode, feedin_RH, initial_capacity, cost, iterstatus=status)[0]
+        m = main.diesel_only( mode, feedin_RH, initial_capacity,cost,PV, Storage,  iterstatus=status)[0]
 
         results_el = main.solve_and_create_results( m )
-
-        results_list.append( main.results_postprocessing( results_el, components_list, time_horizon=CH ) )
-
-        economic_list.append( lcoe.get_lcoe( m, results_el, components_list ) )
+        objective+=processing.meta_results(m)['objective']
 
         initial_capacity = views.node( results_el, 'storage' )['sequences'][(('storage', 'None'), 'capacity')][CH - 1]
 
@@ -57,18 +53,11 @@ def rolling_horizon(PH, CH, SH=8760):
 
         iter += 1
 
-    res = pd.concat( results_list, axis=0 )
-    economics = pd.concat( economic_list, axis=0,keys=range(itermax+1) )
-    economics.to_csv(path+filepath+str(PH)+ '_lcoe.csv')
-    res.to_csv( path + filepath + str( PH ) + '_.csv' )
 
-    meta_results = processing.meta_results( m )
-
-    with open( path + filepath + 'meta.txt', 'w' ) as file:
-        file.write( str( meta_results ) )
+    return objective
 
 if __name__ == '__main__':
-    ph=120
-    ch=120
+    PV=250
+    Storage=273
 
-    rolling_horizon(ph,ch)
+    print(rolling_horizon(PV,Storage))

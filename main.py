@@ -49,7 +49,7 @@ def add_inverter(i, o, name, eta=1):
                         conversion_factors={o: eta} )
 
 
-def diesel_only(mode, feedin, initial_batt_cap, cost, iterstatus=None, PV_source=True, storage_source=True,logger=False):
+def diesel_only(mode, feedin, initial_batt_cap, cost, cap_pv, cap_batt,iterstatus=None, PV_source=True, storage_source=True,logger=False):
 
     if logger==1:
         logger.define_logging()
@@ -121,29 +121,12 @@ def diesel_only(mode, feedin, initial_batt_cap, cost, iterstatus=None, PV_source
     # List all generators in a list called gen_set
     gen_set = [generator1, generator2, generator3]
 
-    sim_params = get_sim_params(cost)
-
-    if mode == 'simulation':
-        nominal_cap_pv = sim_params['pv']['nominal_capacity']
-        inv_pv = None
-        nominal_cap_batt = sim_params['storage']['nominal_capacity']
-        inv_batt = None
-    elif mode == 'investment':
-        nominal_cap_pv = None
-        inv_pv = sim_params['pv']['investment']
-        nominal_cap_batt = None
-        inv_batt = sim_params['storage']['investment']
-    else:
-        raise (UserWarning, 'Energysystem cant be build. Check if mode is spelled correctely. '
-                            'It can be either [simulation] or [investment]')
-
     if PV_source == 1:
         PV = Source( label='PV',
-                     outputs={b_dc: Flow( nominal_value=nominal_cap_pv,
-                                          fixed_costs=cost['pv']['fix'],
+                     outputs={b_dc: Flow( nominal_value=cap_pv,
+                                          fixed_costs=cost['pv']['fix']+cost['pv']['epc'],
                                           actual_value=feedin['PV'],
-                                          fixed=True,
-                                          investment=inv_pv )} )
+                                          fixed=True)} )
     else:
         PV=None
 
@@ -152,7 +135,8 @@ def diesel_only(mode, feedin, initial_batt_cap, cost, iterstatus=None, PV_source
                                              inputs={b_dc: Flow()},
                                              outputs={b_dc: Flow( variable_costs=cost['storage']['var'],
                                                                   fixed_costs=cost['storage']['fix'])},
-                                             nominal_capacity=nominal_cap_batt,
+                                             nominal_capacity=cap_batt,
+                                             fixed_costs=cost['storage']['epc'],
                                              capacity_loss=0.00,
                                              initial_capacity=initial_batt_cap,
                                              nominal_input_capacity_ratio=0.546,
@@ -161,7 +145,6 @@ def diesel_only(mode, feedin, initial_batt_cap, cost, iterstatus=None, PV_source
                                              outflow_conversion_factor=0.92,
                                              capacity_min=0.5,
                                              capacity_max=1,
-                                             investment=inv_batt,
                                              initial_iteration=iterstatus )
     else:
         storage=None
@@ -201,7 +184,7 @@ def solve_and_create_results(m, lp_write=False, gap=0.01):
     # solve with specific optimization options (passed to pyomo)
     logging.info( "Solve optimization problem" )
 
-    m.solve( solver='gurobi', solve_kwargs={'tee': True}, cmdline_options={'MIPGap': gap} )
+    m.solve( solver='gurobi', solve_kwargs={'tee':False}, cmdline_options={'MIPGap': gap} )
 
     # cmdline_options = {'MIPGap': 0.01}
 
@@ -252,47 +235,3 @@ def get_timeseries(file='data/timeseries.csv'):
     timeseries[timeseries['PV'] > 1] = 1
     return timeseries
 
-
-
-if __name__ == '__main__':
-
-    path = 'results'
-    filepath = '/diesel_pv_batt_inv_1_'
-
-    PH = 120
-    sim_mode = 'investment'
-    accuracy=0.01
-
-    time_measure = {}
-
-    components_list = ['demand', 'PV', 'storage', 'pp_oil_1', 'pp_oil_2', 'pp_oil_3', 'excess']
-    sizing_list = ['PV', 'storage']
-
-    start = time.time()
-    initial_capacity = 0.5
-    cost_dict = get_cost_dict( PH )
-
-    timeseries = get_timeseries()
-    timeseries = timeseries.iloc[:PH]
-
-    m = diesel_only( sim_mode, timeseries, initial_capacity, cost_dict )[0]
-
-    results = solve_and_create_results( m ,gap=accuracy)
-
-    economic_results = lcoe.get_lcoe( m, results, components_list ).to_csv( path + filepath + 'lcoe.csv' )
-
-    results_flows = results_postprocessing( results, components_list, time_horizon=PH )
-    results_flows.to_csv( path + filepath + str( PH ) + '.csv' )
-
-    if sim_mode == 'investment':
-        sizing_df=sizing_results(results,m,sizing_list)
-        sizing_df.to_csv( path + filepath + 'invest.csv' )
-
-    end = time.time()
-    time_measure[PH] = end - start
-    print( time_measure[PH] )
-
-    meta_results = processing.meta_results( m )
-
-    with open( path + filepath + 'meta.txt', 'w' ) as file:
-        file.write( str( meta_results ) )
