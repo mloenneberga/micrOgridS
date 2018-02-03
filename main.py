@@ -192,9 +192,6 @@ def solve_and_create_results(m, lp_write=False, gap=0.01):
     logging.info( 'Print results back to energysystem' )
     res = processing.results( m )
 
-    # ToDo work on processing of the results
-    # ToDo add constraints to another module, generalize demand
-
     return res
 
 
@@ -232,6 +229,6 @@ def get_timeseries(file='data/timeseries.csv'):
     timeseries = pd.read_csv(file, sep=';' )
     timeseries.set_index( pd.DatetimeIndex( timeseries['timestamp'], freq='H' ), inplace=True )
     timeseries.drop( labels='timestamp', axis=1, inplace=True )
-    timeseries[timeseries['PV'] > 1] = 1
+    timeseries[timeseries['PV'] > 1]['PV'] = 1
     return timeseries
 
